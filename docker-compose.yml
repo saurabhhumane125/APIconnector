@@ -1,0 +1,26 @@
+services:
+  ai-api-hub:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: universal-ai-api-hub
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - NODE_ENV=production
+      - API_BASE_URL=http://localhost:4000
+      - DATABASE_PATH=/app/data/hub.db
+      - ADMIN_SECRET_KEY=${ADMIN_SECRET_KEY:-hub_admin_secret_key_change_me}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
