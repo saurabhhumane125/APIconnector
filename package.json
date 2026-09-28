@@ -15,6 +15,9 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "keywords": [
     "ai",
     "api-hub",
@@ -32,6 +35,8 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
     "zod": "^3.24.2"
   },
   "devDependencies": {
@@ -46,8 +51,6 @@
     "lucide-react": "^0.475.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "tsx": "^4.19.3",
-    "typescript": "^5.7.3",
     "vite": "^6.2.0",
     "vitest": "^3.0.7"
   }
