@@ -113,6 +113,7 @@ export class GeminiAdapter implements AIProviderAdapter {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey,
         },
         body: JSON.stringify(bodyPayload),
         signal: controller.signal,
