@@ -10,20 +10,12 @@ export class GeminiAdapter implements AIProviderAdapter {
 
   private readonly models: ModelInfo[] = [
     {
-      id: 'gemini-1.5-flash',
-      name: 'Gemini 1.5 Flash',
+      id: 'gemini-2.5-flash',
+      name: 'Gemini 2.5 Flash',
       contextWindow: 1048576,
       supportsVision: true,
       costPer1kInputTokens: 0.000075,
       costPer1kOutputTokens: 0.00030,
-    },
-    {
-      id: 'gemini-1.5-pro',
-      name: 'Gemini 1.5 Pro',
-      contextWindow: 2097152,
-      supportsVision: true,
-      costPer1kInputTokens: 0.00125,
-      costPer1kOutputTokens: 0.0050,
     },
     {
       id: 'gemini-2.0-flash',
@@ -32,6 +24,30 @@ export class GeminiAdapter implements AIProviderAdapter {
       supportsVision: true,
       costPer1kInputTokens: 0.00010,
       costPer1kOutputTokens: 0.00040,
+    },
+    {
+      id: 'gemini-2.5-pro',
+      name: 'Gemini 2.5 Pro',
+      contextWindow: 2097152,
+      supportsVision: true,
+      costPer1kInputTokens: 0.00125,
+      costPer1kOutputTokens: 0.0050,
+    },
+    {
+      id: 'gemini-1.5-flash',
+      name: 'Gemini 1.5 Flash (Legacy)',
+      contextWindow: 1048576,
+      supportsVision: true,
+      costPer1kInputTokens: 0.000075,
+      costPer1kOutputTokens: 0.00030,
+    },
+    {
+      id: 'gemini-1.5-pro',
+      name: 'Gemini 1.5 Pro (Legacy)',
+      contextWindow: 2097152,
+      supportsVision: true,
+      costPer1kInputTokens: 0.00125,
+      costPer1kOutputTokens: 0.0050,
     },
   ];
 
@@ -83,7 +99,12 @@ export class GeminiAdapter implements AIProviderAdapter {
       });
     }
 
-    const modelName = options.model || 'gemini-1.5-flash';
+    // Default to gemini-2.5-flash; map legacy gemini-1.5-flash automatically
+    let activeModel = options.model || 'gemini-2.5-flash';
+    if (activeModel === 'gemini-1.5-flash') {
+      activeModel = 'gemini-2.5-flash';
+    }
+
     const bodyPayload: any = {
       systemInstruction: {
         parts: [{ text: prompt.systemPrompt }],
@@ -107,10 +128,9 @@ export class GeminiAdapter implements AIProviderAdapter {
     const timeoutMs = options.timeoutMs || config.defaultExecutionTimeoutMs;
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-
-    try {
-      const response = await fetch(url, {
+    const tryCallGemini = async (modelToUse: string) => {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${apiKey}`;
+      return await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -119,6 +139,28 @@ export class GeminiAdapter implements AIProviderAdapter {
         body: JSON.stringify(bodyPayload),
         signal: controller.signal,
       });
+    };
+
+    try {
+      let response = await tryCallGemini(activeModel);
+
+      // If 404 NOT_FOUND (model deprecated or not enabled for this specific key), try fallback models
+      if (response.status === 404) {
+        const fallbacks = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-2.5-pro', 'gemini-1.5-flash'];
+        for (const candidate of fallbacks) {
+          if (candidate === activeModel) continue;
+          try {
+            const fbRes = await tryCallGemini(candidate);
+            if (fbRes.ok) {
+              response = fbRes;
+              activeModel = candidate;
+              break;
+            }
+          } catch {
+            // continue trying fallbacks
+          }
+        }
+      }
 
       clearTimeout(timeoutId);
 
@@ -134,7 +176,7 @@ export class GeminiAdapter implements AIProviderAdapter {
       const completionTokens = resJson.usageMetadata?.candidatesTokenCount || 0;
       const totalTokens = resJson.usageMetadata?.totalTokenCount || (promptTokens + completionTokens);
 
-      const modelInfo = this.models.find(m => m.id === options.model);
+      const modelInfo = this.models.find(m => m.id === activeModel);
       const inputCost = (promptTokens / 1000) * (modelInfo?.costPer1kInputTokens || 0.000075);
       const outputCost = (completionTokens / 1000) * (modelInfo?.costPer1kOutputTokens || 0.00030);
       const estimatedCost = Number((inputCost + outputCost).toFixed(6));
@@ -158,7 +200,7 @@ export class GeminiAdapter implements AIProviderAdapter {
 
       return {
         provider: this.id,
-        model: options.model,
+        model: activeModel,
         rawText,
         data: parsedData,
         tokens: {
