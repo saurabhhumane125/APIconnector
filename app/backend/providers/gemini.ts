@@ -10,6 +10,22 @@ export class GeminiAdapter implements AIProviderAdapter {
 
   private readonly models: ModelInfo[] = [
     {
+      id: 'gemini-3.8-flash',
+      name: 'Gemini 3.8 Flash (Latest & Recommended)',
+      contextWindow: 1048576,
+      supportsVision: true,
+      costPer1kInputTokens: 0.000075,
+      costPer1kOutputTokens: 0.00030,
+    },
+    {
+      id: 'gemini-3.5-flash',
+      name: 'Gemini 3.5 Flash',
+      contextWindow: 1048576,
+      supportsVision: true,
+      costPer1kInputTokens: 0.000075,
+      costPer1kOutputTokens: 0.00030,
+    },
+    {
       id: 'gemini-2.5-flash',
       name: 'Gemini 2.5 Flash',
       contextWindow: 1048576,
@@ -99,10 +115,10 @@ export class GeminiAdapter implements AIProviderAdapter {
       });
     }
 
-    // Default to gemini-2.5-flash; map legacy gemini-1.5-flash automatically
-    let activeModel = options.model || 'gemini-2.5-flash';
-    if (activeModel === 'gemini-1.5-flash') {
-      activeModel = 'gemini-2.5-flash';
+    // Default to gemini-3.8-flash; automatically map legacy models
+    let activeModel = options.model || 'gemini-3.8-flash';
+    if (activeModel === 'gemini-1.5-flash' || activeModel === 'gemini-2.5-flash') {
+      activeModel = 'gemini-3.8-flash';
     }
 
     const bodyPayload: any = {
@@ -144,10 +160,29 @@ export class GeminiAdapter implements AIProviderAdapter {
     try {
       let response = await tryCallGemini(activeModel);
 
-      // If 404 NOT_FOUND (model deprecated or not enabled for this specific key), try fallback models
+      // If 404 NOT_FOUND (model deprecated or restricted for this specific key), inspect and try fallbacks
       if (response.status === 404) {
-        const fallbacks = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-2.5-pro', 'gemini-1.5-flash'];
-        for (const candidate of fallbacks) {
+        let suggestedModel: string | null = null;
+        try {
+          const errorText = await response.clone().text();
+          // Extract model recommendation from message like "Please update your code to use models/gemini-3.8-flash"
+          const match = errorText.match(/models\/([a-zA-Z0-9\.\-_]+)/);
+          if (match && match[1] && match[1] !== activeModel) {
+            suggestedModel = match[1];
+          }
+        } catch {
+          // ignore clone error
+        }
+
+        const candidates = [
+          ...(suggestedModel ? [suggestedModel] : []),
+          'gemini-3.8-flash',
+          'gemini-3.5-flash',
+          'gemini-2.5-flash',
+          'gemini-2.0-flash',
+        ];
+
+        for (const candidate of candidates) {
           if (candidate === activeModel) continue;
           try {
             const fbRes = await tryCallGemini(candidate);
