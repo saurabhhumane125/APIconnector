@@ -18,8 +18,8 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
 
   return (
     <header className="navbar">
-      <div className="nav-brand" onClick={() => setActiveTab('dashboard')} style={{ cursor: 'pointer' }}>
-        <Layers size={20} color="var(--color-primary)" />
+      <div className="nav-brand" onClick={() => setActiveTab('dashboard')} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <img src="/favicon.svg" alt="Logo" style={{ width: '22px', height: '22px', borderRadius: '4px', filter: 'drop-shadow(0 0 6px rgba(56, 189, 248, 0.4))' }} />
         <span>AI API HUB</span>
         <span className="nav-brand-badge">PROD</span>
       </div>
