@@ -7,6 +7,7 @@ import { TestConnectorPage } from './pages/TestConnectorPage';
 import { DocumentationPage } from './pages/DocumentationPage';
 import { RequestLogsPage } from './pages/RequestLogsPage';
 import { ApiKeysPage } from './pages/ApiKeysPage';
+import { ProvidersPage } from './pages/ProvidersPage';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
@@ -36,7 +37,7 @@ export const App: React.FC = () => {
         )}
 
         {activeTab === 'test' && (
-          <TestConnectorPage initialConnectorId={targetConnectorId} />
+          <TestConnectorPage initialConnectorId={targetConnectorId} onNavigate={handleNavigate} />
         )}
 
         {activeTab === 'docs' && (
@@ -46,9 +47,12 @@ export const App: React.FC = () => {
         {activeTab === 'logs' && <RequestLogsPage />}
 
         {activeTab === 'keys' && <ApiKeysPage />}
+
+        {activeTab === 'providers' && <ProvidersPage />}
       </main>
     </div>
   );
 };
+
 
 export default App;

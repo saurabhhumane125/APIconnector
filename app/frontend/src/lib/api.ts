@@ -73,6 +73,7 @@ export interface ProviderSummary {
   id: string;
   name: string;
   isConfigured: boolean;
+  maskedKey?: string | null;
   supportedModels: Array<{
     id: string;
     name: string;
@@ -82,6 +83,7 @@ export interface ProviderSummary {
     costPer1kOutputTokens?: number;
   }>;
 }
+
 
 const API_BASE = ''; // Proxy handles routing to backend in dev and prod
 
@@ -224,8 +226,29 @@ export const api = {
     return json.data || [];
   },
 
+  async setProviderKey(providerId: string, apiKey: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/api/providers/${providerId}/key`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey }),
+    });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.error?.message || 'Failed to save provider key');
+    return json.data;
+  },
+
+  async removeProviderKey(providerId: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/api/providers/${providerId}/key`, {
+      method: 'DELETE',
+    });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.error?.message || 'Failed to remove provider key');
+    return json.data;
+  },
+
   async getHealth(): Promise<any> {
     const res = await fetch(`${API_BASE}/api/health`);
     return await res.json();
   },
 };
+

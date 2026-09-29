@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
-import { Layers, Activity, BookOpen, Key, Terminal, ShieldCheck } from 'lucide-react';
+import { Layers, Activity, BookOpen, Key, Terminal, ShieldCheck, Cpu } from 'lucide-react';
 
 interface NavbarProps {
   activeTab: string;
@@ -72,7 +72,16 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
           <Key size={16} />
           <span>API Keys</span>
         </button>
+
+        <button
+          className={`nav-link ${activeTab === 'providers' ? 'active' : ''}`}
+          onClick={() => setActiveTab('providers')}
+        >
+          <Cpu size={16} />
+          <span>Providers</span>
+        </button>
       </nav>
+
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <div

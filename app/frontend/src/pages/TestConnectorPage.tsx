@@ -1,15 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { api, Connector } from '../lib/api';
+import { api, Connector, ProviderSummary } from '../lib/api';
 import { StatusBadge } from '../components/StatusBadge';
 import { CodeBlock } from '../components/CodeBlock';
-import { Play, Clock, Zap, DollarSign, AlertCircle, CheckCircle2, Image as ImageIcon, Key, Terminal } from 'lucide-react';
+import { Play, Clock, Zap, DollarSign, AlertCircle, CheckCircle2, Image as ImageIcon, Key, Terminal, Settings } from 'lucide-react';
 
 interface TestConnectorPageProps {
   initialConnectorId?: string;
+  onNavigate?: (tab: string, connectorId?: string) => void;
 }
 
-export const TestConnectorPage: React.FC<TestConnectorPageProps> = ({ initialConnectorId }) => {
+export const TestConnectorPage: React.FC<TestConnectorPageProps> = ({ initialConnectorId, onNavigate }) => {
   const [connectors, setConnectors] = useState<Connector[]>([]);
+  const [providers, setProviders] = useState<ProviderSummary[]>([]);
   const [selectedConnectorId, setSelectedConnectorId] = useState<string>(initialConnectorId || '');
   const [connector, setConnector] = useState<Connector | null>(null);
 
@@ -25,7 +27,7 @@ export const TestConnectorPage: React.FC<TestConnectorPageProps> = ({ initialCon
     durationMs?: number;
   } | null>(null);
 
-  // Load all connectors
+  // Load connectors and provider statuses
   useEffect(() => {
     api.getConnectors().then(list => {
       setConnectors(list);
@@ -33,6 +35,10 @@ export const TestConnectorPage: React.FC<TestConnectorPageProps> = ({ initialCon
         setSelectedConnectorId(list[0].id);
       }
     });
+
+    api.getProviders().then(p => {
+      setProviders(p);
+    }).catch(() => {});
   }, []);
 
   // When selected connector changes, load its definition and prefill form defaults
@@ -174,6 +180,43 @@ export const TestConnectorPage: React.FC<TestConnectorPageProps> = ({ initialCon
                 </div>
               </div>
             </div>
+
+            {(() => {
+              const activeProvider = providers.find(p => p.id === connector.provider);
+              const isConfigured = activeProvider ? activeProvider.isConfigured : true;
+              if (isConfigured) return null;
+              return (
+                <div style={{
+                  backgroundColor: 'rgba(234, 179, 8, 0.12)',
+                  border: '1px solid rgba(234, 179, 8, 0.35)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '12px 14px',
+                  marginBottom: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  flexWrap: 'wrap'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <AlertCircle size={18} color="#eab308" />
+                    <span style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>
+                      API key required for <strong>{activeProvider?.name || connector.provider}</strong> to execute requests.
+                    </span>
+                  </div>
+                  {onNavigate && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => onNavigate('providers')}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 10px', fontSize: '0.8rem' }}
+                    >
+                      <Settings size={13} /> Enter {activeProvider?.name || connector.provider} Key
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
 
             <form onSubmit={handleSubmit}>
               {/* Authentication header input if connector requires auth */}

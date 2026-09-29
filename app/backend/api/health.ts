@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { getDatabase } from '../../../database/connection';
 import { config } from '../config';
+import { providerKeyStore } from '../providers/providerKeyStore';
 
 export function healthHandler(_req: Request, res: Response): void {
   try {
@@ -10,10 +11,10 @@ export function healthHandler(_req: Request, res: Response): void {
 
     // Check configured provider status (only indicating presence of keys, never exposing raw secrets)
     const providerStatus = {
-      openai: Boolean(config.providers.openaiApiKey),
-      groq: Boolean(config.providers.groqApiKey),
-      gemini: Boolean(config.providers.geminiApiKey),
-      anthropic: Boolean(config.providers.anthropicApiKey),
+      openai: providerKeyStore.isConfigured('openai'),
+      groq: providerKeyStore.isConfigured('groq'),
+      gemini: providerKeyStore.isConfigured('gemini'),
+      anthropic: providerKeyStore.isConfigured('anthropic'),
     };
 
     res.status(200).json({

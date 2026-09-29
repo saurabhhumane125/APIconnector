@@ -1,5 +1,6 @@
 import { AIProviderAdapter, ModelInfo, ProviderExecutionOptions, ProviderExecutionResult } from './types';
 import { config } from '../config';
+import { providerKeyStore } from './providerKeyStore';
 import { buildExecutionPrompt } from './promptBuilder';
 import { extractJsonFromText, validateOutputAgainstSchema } from '../validation/outputValidator';
 
@@ -35,7 +36,7 @@ export class GroqAdapter implements AIProviderAdapter {
   ];
 
   public isConfigured(): boolean {
-    return Boolean(config.providers.groqApiKey);
+    return providerKeyStore.isConfigured(this.id);
   }
 
   public getSupportedModels(): ModelInfo[] {
@@ -43,7 +44,7 @@ export class GroqAdapter implements AIProviderAdapter {
   }
 
   public async execute(options: ProviderExecutionOptions): Promise<ProviderExecutionResult> {
-    const apiKey = options.apiKeyOverride || config.providers.groqApiKey;
+    const apiKey = options.apiKeyOverride || providerKeyStore.getKey(this.id);
     if (!apiKey) {
       throw new Error("Provider 'groq' is not configured. Please supply a GROQ_API_KEY.");
     }
