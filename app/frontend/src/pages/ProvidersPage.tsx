@@ -125,6 +125,25 @@ export const ProvidersPage: React.FC = () => {
         </button>
       </div>
 
+      <div style={{
+        backgroundColor: 'rgba(56, 189, 248, 0.08)',
+        border: '1px solid rgba(56, 189, 248, 0.25)',
+        borderRadius: 'var(--radius-md)',
+        padding: '12px 16px',
+        marginBottom: '20px',
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: '12px',
+        fontSize: '0.85rem',
+        color: 'var(--text-secondary)'
+      }}>
+        <ShieldCheck size={20} color="var(--color-primary)" style={{ flexShrink: 0, marginTop: '2px' }} />
+        <div>
+          <strong style={{ color: 'var(--text-primary)' }}>High Availability & Key Pooling:</strong>
+          {' '}You can supply <strong>multiple API keys</strong> per provider (separated by commas or newlines). The API Hub automatically balances traffic, rotates keys, and fails over across keys if any key encounters temporary capacity limits (HTTP 503) or rate limits (HTTP 429). Configuring multiple providers also enables <strong>automatic cross-provider failover</strong>.
+        </div>
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '20px' }}>
         {providers.map(prov => {
           const portal = getPortalInfo(prov.id);

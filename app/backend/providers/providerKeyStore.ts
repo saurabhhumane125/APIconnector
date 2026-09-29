@@ -74,14 +74,26 @@ class ProviderKeyStore {
   }
 
   public isConfigured(providerId: string): boolean {
-    return Boolean(this.getKey(providerId));
+    return this.getKeyPool(providerId).length > 0;
+  }
+
+  public getKeyPool(providerId: string): string[] {
+    const raw = this.getKey(providerId);
+    if (!raw) return [];
+    return raw
+      .split(/[\n,;]+/)
+      .map(k => k.trim())
+      .filter(k => k.length > 0);
   }
 
   public getMaskedKey(providerId: string): string | null {
-    const key = this.getKey(providerId);
-    if (!key) return null;
-    if (key.length <= 8) return '****';
-    return `${key.substring(0, 4)}...${key.substring(key.length - 4)}`;
+    const keys = this.getKeyPool(providerId);
+    if (keys.length === 0) return null;
+    const maskSingle = (k: string) => k.length <= 8 ? '****' : `${k.substring(0, 4)}...${k.substring(k.length - 4)}`;
+    if (keys.length === 1) {
+      return maskSingle(keys[0]);
+    }
+    return `${keys.length} keys pooled (${maskSingle(keys[0])}, ...)`;
   }
 }
 

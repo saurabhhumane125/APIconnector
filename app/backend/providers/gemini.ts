@@ -136,72 +136,103 @@ export class GeminiAdapter implements AIProviderAdapter {
       },
     };
 
-    if (options.outputSchema) {
-      bodyPayload.generationConfig.responseMimeType = 'application/json';
+    const keyPool = options.apiKeyOverride 
+      ? [options.apiKeyOverride] 
+      : providerKeyStore.getKeyPool(this.id);
+
+    if (keyPool.length === 0) {
+      throw new Error("Provider 'gemini' is not configured. Please supply a GEMINI_API_KEY.");
     }
 
     const controller = new AbortController();
     const timeoutMs = options.timeoutMs || config.defaultExecutionTimeoutMs;
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    const tryCallGemini = async (modelToUse: string) => {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${apiKey}`;
-      return await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': apiKey,
-        },
-        body: JSON.stringify(bodyPayload),
-        signal: controller.signal,
-      });
-    };
+    let lastError: Error | null = null;
+    let response: any = null;
 
     try {
-      let response = await tryCallGemini(activeModel);
+      // Iterate through keys in the pool (provides automatic failover across multiple API keys)
+      for (let kIndex = 0; kIndex < keyPool.length; kIndex++) {
+        const currentKey = keyPool[kIndex];
 
-      // If 404 NOT_FOUND (model deprecated or restricted for this specific key), inspect and try fallbacks
-      if (response.status === 404) {
-        let suggestedModel: string | null = null;
-        try {
-          const errorText = await response.clone().text();
-          // Extract model recommendation from message like "Please update your code to use models/gemini-3.8-flash"
-          const match = errorText.match(/models\/([a-zA-Z0-9\.\-_]+)/);
-          if (match && match[1] && match[1] !== activeModel) {
-            suggestedModel = match[1];
+        const tryCallGemini = async (modelToUse: string) => {
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${currentKey}`;
+          return await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': currentKey,
+            },
+            body: JSON.stringify(bodyPayload),
+            signal: controller.signal,
+          });
+        };
+
+        for (let attempt = 0; attempt < 2; attempt++) {
+          let currentResponse = await tryCallGemini(activeModel);
+
+          // Handle 404 (model deprecated/unsupported), 503 (high demand), 429 (rate limit)
+          if (currentResponse.status === 404 || currentResponse.status === 503 || currentResponse.status === 429) {
+            let suggestedModel: string | null = null;
+            try {
+              const errorText = await currentResponse.clone().text();
+              const match = errorText.match(/models\/([a-zA-Z0-9\.\-_]+)/);
+              if (match && match[1] && match[1] !== activeModel) {
+                suggestedModel = match[1];
+              }
+            } catch {
+              // ignore clone error
+            }
+
+            const candidates = [
+              ...(suggestedModel ? [suggestedModel] : []),
+              'gemini-3.8-flash',
+              'gemini-3.5-flash',
+              'gemini-2.5-flash',
+              'gemini-2.0-flash',
+            ];
+
+            for (const candidate of candidates) {
+              if (candidate === activeModel) continue;
+              try {
+                const fbRes = await tryCallGemini(candidate);
+                if (fbRes.ok) {
+                  currentResponse = fbRes;
+                  activeModel = candidate;
+                  break;
+                }
+              } catch {
+                // continue trying candidates
+              }
+            }
           }
-        } catch {
-          // ignore clone error
+
+          if (currentResponse.ok) {
+            response = currentResponse;
+            break;
+          }
+
+          // If temporary spike (503) or rate limit (429), back off briefly on first attempt
+          if ((currentResponse.status === 503 || currentResponse.status === 429) && attempt === 0) {
+            await new Promise(r => setTimeout(r, 600));
+            continue;
+          }
+
+          const errorBody = await currentResponse.text();
+          lastError = new Error(`Gemini API returned HTTP ${currentResponse.status}: ${errorBody}`);
+          break; // Try next key in pool
         }
 
-        const candidates = [
-          ...(suggestedModel ? [suggestedModel] : []),
-          'gemini-3.8-flash',
-          'gemini-3.5-flash',
-          'gemini-2.5-flash',
-          'gemini-2.0-flash',
-        ];
-
-        for (const candidate of candidates) {
-          if (candidate === activeModel) continue;
-          try {
-            const fbRes = await tryCallGemini(candidate);
-            if (fbRes.ok) {
-              response = fbRes;
-              activeModel = candidate;
-              break;
-            }
-          } catch {
-            // continue trying fallbacks
-          }
+        if (response && response.ok) {
+          break;
         }
       }
 
       clearTimeout(timeoutId);
 
-      if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(`Gemini API returned HTTP ${response.status}: ${errorBody}`);
+      if (!response || !response.ok) {
+        throw lastError || new Error('Gemini API request failed across all keys and fallback models.');
       }
 
       const resJson: any = await response.json();

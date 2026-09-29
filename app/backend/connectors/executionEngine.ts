@@ -225,9 +225,14 @@ export class ExecutionEngine {
       };
     }
 
-    // 6. Execute Provider through Adapter Contract
+    // 6. Execute Provider through Adapter Contract with Cross-Provider Failover Resilience
+    let providerResult: any;
+    let effectiveProvider = connector.provider;
+    let effectiveModel = connector.model;
+    let failoverMetadata: any = null;
+
     try {
-      const providerResult = await adapter.execute({
+      providerResult = await adapter.execute({
         model: connector.model,
         systemPrompt: connector.systemPrompt,
         inputs: validation.sanitizedInputs,
@@ -235,85 +240,139 @@ export class ExecutionEngine {
         outputSchema: connector.outputSchema,
         apiKeyOverride: options?.apiKeyOverride,
       });
+      effectiveModel = providerResult.model || connector.model;
+    } catch (primaryError: any) {
+      // Check if cross-provider failover can salvage the request
+      const isVision = connector.inputParameters.some(p => p.type === 'image');
+      const failoverCandidates: { provider: string; model: string }[] = [];
 
-      const durationMs = Date.now() - startTime;
+      if (isVision) {
+        // OpenAI (gpt-4o-mini) supports vision
+        if (connector.provider !== 'openai' && registry.get('openai').isConfigured()) {
+          failoverCandidates.push({ provider: 'openai', model: 'gpt-4o-mini' });
+        }
+      } else {
+        // Text connectors can failover across Groq, OpenAI, Gemini, Anthropic
+        const order = ['groq', 'openai', 'gemini', 'anthropic'];
+        for (const pId of order) {
+          if (pId !== connector.provider && registry.get(pId).isConfigured()) {
+            const defModel = registry.get(pId).getSupportedModels()[0]?.id;
+            if (defModel) {
+              failoverCandidates.push({ provider: pId, model: defModel });
+            }
+          }
+        }
+      }
 
-      // 7. Record Persistent Request Log
-      logger.log({
-        connectorId: connector.id,
-        status: 'success',
-        httpStatus: 200,
-        durationMs,
-        provider: connector.provider,
-        model: connector.model,
-        promptTokens: providerResult.tokens.promptTokens,
-        completionTokens: providerResult.tokens.completionTokens,
-        totalTokens: providerResult.tokens.totalTokens,
-        estimatedCost: providerResult.estimatedCost,
-        inputPayload: validation.sanitizedInputs,
-        responsePayload: providerResult.data,
-        clientIp: options?.clientIp,
-      });
+      let failoverSuccess = false;
+      for (const candidate of failoverCandidates) {
+        try {
+          const fallbackAdapter = registry.get(candidate.provider);
+          providerResult = await fallbackAdapter.execute({
+            model: candidate.model,
+            systemPrompt: connector.systemPrompt,
+            inputs: validation.sanitizedInputs,
+            inputDefinitions: connector.inputParameters,
+            outputSchema: connector.outputSchema,
+          });
 
-      // 8. Return Predictable Success Envelope
-      return {
-        statusCode: 200,
-        envelope: {
-          success: true,
-          data: providerResult.data,
-          error: null,
-          meta: {
-            requestId,
-            connectorId: connector.id,
-            connectorSlug: connector.slug,
-            provider: connector.provider,
-            model: connector.model,
-            durationMs,
-            tokens: {
-              prompt: providerResult.tokens.promptTokens,
-              completion: providerResult.tokens.completionTokens,
-              total: providerResult.tokens.totalTokens,
+          effectiveProvider = candidate.provider;
+          effectiveModel = providerResult.model || candidate.model;
+          failoverMetadata = {
+            triggered: true,
+            primaryProvider: connector.provider,
+            primaryError: primaryError.message,
+            fallbackProvider: candidate.provider,
+            fallbackModel: candidate.model,
+          };
+          failoverSuccess = true;
+          break;
+        } catch {
+          // Try next failover candidate
+        }
+      }
+
+      if (!failoverSuccess) {
+        const durationMs = Date.now() - startTime;
+        const errorMessage = primaryError.message || 'An error occurred during AI provider execution.';
+
+        logger.log({
+          connectorId: connector.id,
+          status: 'error',
+          httpStatus: 502,
+          durationMs,
+          provider: connector.provider,
+          model: connector.model,
+          errorCode: 'PROVIDER_EXECUTION_ERROR',
+          errorMessage,
+          inputPayload: validation.sanitizedInputs,
+          clientIp: options?.clientIp,
+        });
+
+        return {
+          statusCode: 502,
+          envelope: {
+            success: false,
+            data: null,
+            error: {
+              code: 'PROVIDER_EXECUTION_ERROR',
+              message: errorMessage,
             },
-            estimatedCost: providerResult.estimatedCost,
+            meta: {
+              requestId,
+              connectorId: connector.id,
+              connectorSlug: connector.slug,
+              provider: connector.provider,
+              model: connector.model,
+              durationMs,
+            },
           },
-        },
-      };
-    } catch (providerError: any) {
-      const durationMs = Date.now() - startTime;
-      const errorMessage = providerError.message || 'An error occurred during AI provider execution.';
-
-      logger.log({
-        connectorId: connector.id,
-        status: 'error',
-        httpStatus: 502,
-        durationMs,
-        provider: connector.provider,
-        model: connector.model,
-        errorCode: 'PROVIDER_EXECUTION_ERROR',
-        errorMessage,
-        inputPayload: validation.sanitizedInputs,
-        clientIp: options?.clientIp,
-      });
-
-      return {
-        statusCode: 502,
-        envelope: {
-          success: false,
-          data: null,
-          error: {
-            code: 'PROVIDER_EXECUTION_ERROR',
-            message: errorMessage,
-          },
-          meta: {
-            requestId,
-            connectorId: connector.id,
-            connectorSlug: connector.slug,
-            provider: connector.provider,
-            model: connector.model,
-            durationMs,
-          },
-        },
-      };
+        };
+      }
     }
+
+    const durationMs = Date.now() - startTime;
+
+    // 7. Record Persistent Request Log
+    logger.log({
+      connectorId: connector.id,
+      status: 'success',
+      httpStatus: 200,
+      durationMs,
+      provider: effectiveProvider,
+      model: effectiveModel,
+      promptTokens: providerResult.tokens.promptTokens,
+      completionTokens: providerResult.tokens.completionTokens,
+      totalTokens: providerResult.tokens.totalTokens,
+      estimatedCost: providerResult.estimatedCost,
+      inputPayload: validation.sanitizedInputs,
+      responsePayload: providerResult.data,
+      clientIp: options?.clientIp,
+    });
+
+    // 8. Return Predictable Success Envelope
+    return {
+      statusCode: 200,
+      envelope: {
+        success: true,
+        data: providerResult.data,
+        error: null,
+        meta: {
+          requestId,
+          connectorId: connector.id,
+          connectorSlug: connector.slug,
+          provider: effectiveProvider,
+          model: effectiveModel,
+          durationMs,
+          tokens: {
+            prompt: providerResult.tokens.promptTokens,
+            completion: providerResult.tokens.completionTokens,
+            total: providerResult.tokens.totalTokens,
+          },
+          estimatedCost: providerResult.estimatedCost,
+          ...(failoverMetadata ? { failover: failoverMetadata } : {}),
+        },
+      },
+    };
   }
 }
